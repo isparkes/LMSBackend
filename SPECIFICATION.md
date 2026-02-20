@@ -144,7 +144,7 @@ Table: `quiz_attempts`
 | lessonId | UUID | FK → lessons.id, ON DELETE CASCADE | |
 | score | float | not null | 0.0–1.0 |
 | passed | boolean | not null | Whether score met the pass mark |
-| answers | jsonb | not null | Array of `{ questionId, selectedOptionIndex, correctOptionIndex, isCorrect }` |
+| answers | jsonb | not null | Array of `{ questionId, selectedOptionIndex, selectedOptionIndices, correctOptionIndex, correctOptionIndices, multiSelect, isCorrect }` |
 | createdAt | timestamp | auto-generated | |
 
 **Relations:** Belongs to `User`. Belongs to `Lesson`.
@@ -508,7 +508,7 @@ Returns all users ordered by `createdAt DESC`.
 
 `passMarkPercentage` is included for each lesson (non-zero only for quiz lessons). This is used by the frontend to implement quiz gating.
 
-**Admin overview response** (`GET /progress/admin/overview`): Returns an array of all users with their per-course progress (including `lastLoginAt`), used by the admin dashboard.
+**Admin overview response** (`GET /progress/admin/overview`): Returns an array of all users with their per-course progress. Each user entry includes `userId`, `email`, `firstName`, `lastName`, `role`, `createdAt`, `lastLoginAt`, and a `courses` array with `courseId`, `courseTitle`, `totalLessons`, `completedLessons`, and `progressPercentage`.
 
 **Admin user detail response** (`GET /progress/admin/users/:userId`): Returns an array of all courses with per-module, per-lesson breakdown. Quiz lessons include enriched data: `attemptCount`, `maxAttempts`, `passMarkPercentage`, `bestScore`, `passed`.
 
@@ -650,11 +650,11 @@ Standard NestJS HTTP exceptions are used throughout:
 
 | Status | When |
 |--------|------|
-| 400 Bad Request | Validation failure; invalid quiz submission; wrong lesson type |
+| 400 Bad Request | Validation failure; invalid quiz submission; wrong lesson type; invalid file type on upload |
 | 401 Unauthorized | Missing/invalid JWT; wrong credentials |
 | 403 Forbidden | Learner accessing admin-only endpoint |
 | 404 Not Found | Entity does not exist (or unpublished course for learner) |
-| 409 Conflict | Duplicate email on registration |
+| 409 Conflict | Duplicate email on registration; file rename conflicts with existing file |
 
 ---
 

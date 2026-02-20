@@ -50,8 +50,9 @@ The API runs on `http://localhost:3000` with all routes prefixed under `/api`.
 | Auth | `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/profile` |
 | Courses | CRUD at `/api/courses` (admin creates, learners see published only) |
 | Modules | CRUD at `/api/courses/:courseId/modules` |
-| Lessons | CRUD at `/api/modules/:moduleId/lessons` (types: text, video, quiz) |
-| Quiz | Questions CRUD at `/api/lessons/:lessonId/questions`, submit at `/api/lessons/:lessonId/submit` |
-| Progress | `POST /api/progress/complete`, `GET /api/progress/courses/:courseId` |
-| Uploads | `POST /api/uploads/video`, `POST /api/uploads/pdf` |
+| Lessons | CRUD at `/api/modules/:moduleId/lessons` (types: text, video, pdf, quiz) |
+| Quiz | Questions CRUD at `/api/lessons/:lessonId/questions`, submit at `/api/lessons/:lessonId/submit`, attempts at `/api/lessons/:lessonId/attempts` |
+| Progress | `POST /api/progress/complete`, `GET /api/progress/courses/:courseId`, admin overview and per-user detail |
+| Users | `GET /api/users`, `GET /api/users/:userId`, `PATCH /api/users/:userId/password` (admin only) |
+| Uploads | Upload, list, rename, and delete at `/api/uploads/video`, `/api/uploads/pdf`, `/api/uploads/videos`, `/api/uploads/pdfs` |
 | Static files | `GET /uploads/videos/*`, `GET /uploads/pdfs/*` |
