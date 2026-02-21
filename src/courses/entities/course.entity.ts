@@ -16,6 +16,9 @@ export class Course extends BaseEntity {
   @Column({ default: false })
   isPublished: boolean;
 
+  @Column({ default: false })
+  requireEnrollment: boolean;
+
   @Column({ type: 'int', default: 0 })
   ordering: number;
 

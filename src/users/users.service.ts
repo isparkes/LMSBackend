@@ -1,8 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
-import { User } from './entities/user.entity';
+import { User, UserRole } from './entities/user.entity';
+import { CreateUserDto } from './dto/create-user.dto';
 
 @Injectable()
 export class UsersService {
@@ -39,5 +45,46 @@ export class UsersService {
     }
     user.passwordHash = await bcrypt.hash(password, 10);
     await this.usersRepository.save(user);
+  }
+
+  async createUser(dto: CreateUserDto): Promise<User> {
+    // Check for existing user
+    const existing = await this.findByEmail(dto.email);
+    if (existing) {
+      throw new ConflictException('Email already registered');
+    }
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+
+    // Create user
+    const user = this.usersRepository.create({
+      email: dto.email,
+      passwordHash,
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      role: dto.role ?? UserRole.LEARNER,
+    });
+
+    return this.usersRepository.save(user);
+  }
+
+  async deleteUser(userId: string, currentUserId: string): Promise<void> {
+    // Prevent self-deletion
+    if (userId === currentUserId) {
+      throw new BadRequestException('Cannot delete your own account');
+    }
+
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // TypeORM cascade delete will handle:
+    // - UserProgress (via @ManyToOne onDelete: 'CASCADE')
+    // - QuizAttempt (via @ManyToOne onDelete: 'CASCADE')
+    // - Enrollment (via @ManyToOne onDelete: 'CASCADE')
+
+    await this.usersRepository.remove(user);
   }
 }

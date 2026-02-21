@@ -16,6 +16,10 @@ export class CreateCourseDto {
   @IsOptional()
   isPublished?: boolean;
 
+  @IsBoolean()
+  @IsOptional()
+  requireEnrollment?: boolean;
+
   @IsInt()
   @Min(0)
   @IsOptional()

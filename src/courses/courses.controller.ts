@@ -26,16 +26,16 @@ export class CoursesController {
   constructor(private coursesService: CoursesService) {}
 
   @Get()
-  findAll(@CurrentUser() user: { role: UserRole }) {
-    return this.coursesService.findAll(user.role);
+  findAll(@CurrentUser() user: { id: string; role: UserRole }) {
+    return this.coursesService.findAll(user.id, user.role);
   }
 
   @Get(':id')
   findOne(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: { role: UserRole },
+    @CurrentUser() user: { id: string; role: UserRole },
   ) {
-    return this.coursesService.findOne(id, user.role);
+    return this.coursesService.findOne(id, user.id, user.role);
   }
 
   @Post()
