@@ -42,17 +42,25 @@ The API runs on `http://localhost:3000` with all routes prefixed under `/api`.
 | JWT_SECRET | Yes | — | JWT signing key |
 | JWT_EXPIRATION | No | `1d` | Token lifetime |
 | PORT | No | `3000` | Server listen port |
+| SMTP_HOST | Yes | — | SMTP server hostname |
+| SMTP_PORT | No | `587` | SMTP server port |
+| SMTP_SECURE | No | `false` | Use TLS (`true` for port 465) |
+| SMTP_USER | Yes | — | SMTP login username |
+| SMTP_PASSWORD | Yes | — | SMTP login password |
+| SMTP_FROM | Yes | — | Sender address for outbound email |
+| FRONTEND_URL | Yes | — | Base URL of the frontend (used in reset-password links) |
 
 ## API Overview
 
 | Area | Endpoints |
 |------|-----------|
-| Auth | `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/profile` |
-| Courses | CRUD at `/api/courses` (admin creates, learners see published only) |
+| Auth | `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/profile`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password` |
+| Courses | CRUD at `/api/courses` (admin creates; learners see published open courses and enrolled restricted courses) |
 | Modules | CRUD at `/api/courses/:courseId/modules` |
 | Lessons | CRUD at `/api/modules/:moduleId/lessons` (types: text, video, pdf, quiz) |
 | Quiz | Questions CRUD at `/api/lessons/:lessonId/questions`, submit at `/api/lessons/:lessonId/submit`, attempts at `/api/lessons/:lessonId/attempts` |
 | Progress | `POST /api/progress/complete`, `GET /api/progress/courses/:courseId`, admin overview and per-user detail |
-| Users | `GET /api/users`, `GET /api/users/:userId`, `PATCH /api/users/:userId/password` (admin only) |
+| Enrollments | CRUD at `/api/enrollments` — admin enrols/unenrols users; learners view their own enrolled courses |
+| Users | Full CRUD at `/api/users` — create, list, get, change password, delete (admin only) |
 | Uploads | Upload, list, rename, and delete at `/api/uploads/video`, `/api/uploads/pdf`, `/api/uploads/videos`, `/api/uploads/pdfs` |
 | Static files | `GET /uploads/videos/*`, `GET /uploads/pdfs/*` |

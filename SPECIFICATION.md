@@ -4,6 +4,8 @@
 
 A Learning Management System backend that delivers lessons (video, text, PDF, multiple-choice quizzes) organized into Modules within Courses. Learners register, authenticate via JWT, consume content, and have their progress tracked. Quizzes support configurable pass marks and attempt limits. Admins manage all content, view user progress, and can reset quiz attempts.
 
+Course access uses a hybrid enrollment model: courses with `requireEnrollment: false` are open to all learners; courses with `requireEnrollment: true` are visible only to explicitly enrolled learners. Admins are always exempt from enrollment checks.
+
 ## Tech Stack
 
 | Component | Technology |
@@ -13,6 +15,7 @@ A Learning Management System backend that delivers lessons (video, text, PDF, mu
 | Auth | JWT (passport-jwt, bcrypt) |
 | Validation | class-validator, class-transformer |
 | File uploads | Multer (local disk storage) |
+| Email | nodemailer (SMTP) |
 | Runtime | Node.js |
 
 ## Data Model
@@ -22,6 +25,8 @@ A Learning Management System backend that delivers lessons (video, text, PDF, mu
 ```
 User (1) ──< UserProgress >── (1) Lesson
 User (1) ──< QuizAttempt >── (1) Lesson
+User (1) ──< Enrollment >── (1) Course
+User (1) ──< PasswordResetToken
 Course (1) ──< CourseModule (1) ──< Lesson (1) ──< QuizQuestion
 ```
 
@@ -52,11 +57,12 @@ Table: `courses`
 | description | text | nullable | |
 | thumbnail | varchar | nullable | |
 | isPublished | boolean | not null, default `false` | Learners only see published courses |
+| requireEnrollment | boolean | not null, default `false` | When `true`, only explicitly enrolled learners can access this course |
 | ordering | int | not null, default `0` | Sort order |
 | createdAt | timestamp | auto-generated | |
 | updatedAt | timestamp | auto-updated | |
 
-**Relations:** Has many `CourseModule` (cascade delete).
+**Relations:** Has many `CourseModule` (cascade delete). Has many `Enrollment` (cascade delete).
 
 ### CourseModule
 
@@ -151,6 +157,44 @@ Table: `quiz_attempts`
 
 **When recorded:** Attempts are only recorded when `passMarkPercentage > 0` or `maxAttempts > 0` on the lesson.
 
+### Enrollment
+
+Table: `enrollments`
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| userId | UUID | PK, FK → users.id, ON DELETE CASCADE | Composite PK with courseId |
+| courseId | UUID | PK, FK → courses.id, ON DELETE CASCADE | Composite PK with userId |
+| status | enum | not null, default `active` | `active`, `completed`, or `unenrolled` |
+| enrolledAt | timestamp | auto-generated | |
+| completedAt | timestamp | nullable | Set when status becomes `completed` |
+| unenrolledAt | timestamp | nullable | Set when status becomes `unenrolled` |
+
+**Relations:** Belongs to `User`. Belongs to `Course`.
+
+**Composite PK** `(userId, courseId)` prevents duplicate active enrollments.
+
+**Unenrollment** is a soft delete — the record is retained for audit purposes with `status = unenrolled`.
+
+### PasswordResetToken
+
+Table: `password_reset_tokens`
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| id | UUID | PK, auto-generated | |
+| userId | UUID | FK → users.id, ON DELETE CASCADE | |
+| tokenHash | varchar | not null | bcrypt hash of the plain token. Never returned in responses. |
+| expiresAt | timestamp | not null | 1 hour after creation |
+| used | boolean | not null, default `false` | Marked `true` immediately on use |
+| usedAt | timestamp | nullable | Set when token is consumed |
+| createdAt | timestamp | auto-generated | |
+| updatedAt | timestamp | auto-updated | |
+
+**Relations:** Belongs to `User`.
+
+**Token lifecycle:** A 64-character hex token is generated via `crypto.randomBytes(32)`, hashed with bcrypt, and stored. The plain token is emailed to the user. On reset, all active tokens in the database are compared against the submitted token; the first bcrypt match is accepted, immediately marked as used, and all remaining tokens for that user are also invalidated.
+
 ---
 
 ## Authentication
@@ -187,9 +231,10 @@ bcrypt with 10 salt rounds. The `passwordHash` field is excluded from all serial
 | Action | Admin | Learner |
 |--------|-------|---------|
 | Register / Login | Yes | Yes |
+| Request / complete password reset | Yes | Yes |
 | View profile | Yes | Yes |
-| List courses | All courses | Published only |
-| View course detail | All courses | Published only |
+| List courses | All courses | Open published + enrolled restricted |
+| View course detail | All courses | Open published + enrolled restricted |
 | Create / Update / Delete courses | Yes | No (403) |
 | Create / Update / Delete modules | Yes | No (403) |
 | Create / Update / Delete lessons | Yes | No (403) |
@@ -199,9 +244,13 @@ bcrypt with 10 salt rounds. The `passwordHash` field is excluded from all serial
 | Mark lesson complete | Yes | Yes |
 | View course progress | Yes | Yes |
 | View lesson detail (quiz answers hidden) | Sees correctOptionIndex/Indices | correctOptionIndex/Indices hidden |
+| Create / Delete users | Yes | No (403) |
 | List all users | Yes | No (403) |
 | View single user | Yes | No (403) |
 | Change user password | Yes | No (403) |
+| Enroll / Unenroll users | Yes | No (403) |
+| List enrollments (all or filtered) | Yes | No (403) |
+| View own enrolled courses | Yes | Yes |
 | View admin progress overview | Yes | No (403) |
 | View user detailed progress | Yes | No (403) |
 | Reset user quiz attempts | Yes | No (403) |
@@ -222,6 +271,8 @@ All routes are prefixed with `/api`. All parameters named `:id`, `:courseId`, `:
 | POST | `/auth/register` | None | `RegisterDto` | `{ accessToken, user }` |
 | POST | `/auth/login` | None | `LoginDto` | `{ accessToken, user }` |
 | GET | `/auth/profile` | JWT | — | `{ id, email, role }` |
+| POST | `/auth/forgot-password` | None | `ForgotPasswordDto` | `{ message }` |
+| POST | `/auth/reset-password` | None | `ResetPasswordDto` | `{ message }` |
 
 **RegisterDto**
 
@@ -239,9 +290,30 @@ All routes are prefixed with `/api`. All parameters named `:id`, `:courseId`, `:
 | email | string | Valid email |
 | password | string | Required |
 
+**ForgotPasswordDto**
+
+| Field | Type | Validation |
+|-------|------|-----------|
+| email | string | Valid email |
+
+**ResetPasswordDto**
+
+| Field | Type | Validation |
+|-------|------|-----------|
+| token | string | 32–128 characters (the hex token from the reset email) |
+| newPassword | string | 8–128 characters |
+
+**Password reset flow:**
+1. Client sends `POST /auth/forgot-password` with the user's email.
+2. Server generates a 64-character cryptographically random hex token, stores a bcrypt hash with a 1-hour expiry, and emails the plain token to the user as a reset link (`FRONTEND_URL/reset-password?token=<token>`).
+3. The response is always `{ message: "If the email exists, a password reset link has been sent" }` — email existence is never revealed.
+4. Client sends `POST /auth/reset-password` with the plain token and new password.
+5. Server validates the token (not used, not expired), updates the password, marks the token used, and invalidates all other outstanding tokens for that user.
+
 **Error responses:**
 - 409 Conflict — email already registered (register)
 - 401 Unauthorized — invalid credentials (login)
+- 400 Bad Request — invalid or expired reset token (reset-password)
 
 ---
 
@@ -262,14 +334,19 @@ All routes are prefixed with `/api`. All parameters named `:id`, `:courseId`, `:
 | title | string | Yes | — |
 | description | string | No | — |
 | thumbnail | string | No | — |
-| isPublished | boolean | No | — |
+| isPublished | boolean | No | Default `false` |
+| requireEnrollment | boolean | No | Default `false`. When `true`, only enrolled learners can access this course. |
 | ordering | number | No | Integer >= 0 |
 
 **UpdateCourseDto** — all fields from CreateCourseDto, all optional.
 
 **Ordering:** Results sorted by `ordering ASC`, then `createdAt ASC`.
 
-**Visibility:** Learners only see courses where `isPublished = true`. Admins see all.
+**Visibility (hybrid enrollment model):**
+- Admins always see all courses.
+- Learners see a course only if it is published **and** one of:
+  - `requireEnrollment = false` — open to all learners.
+  - `requireEnrollment = true` — learner has an active enrollment record.
 
 **GET /:id response includes:** nested `modules[]`, each with nested `lessons[]`, all sorted by their `order` field.
 
@@ -440,15 +517,87 @@ When `showCorrectAnswers` is `false` on the lesson, the `results` array is strip
 |--------|-------|------|------|------|----------|
 | GET | `/users` | JWT | Admin | — | `User[]` (passwordHash excluded) |
 | GET | `/users/:userId` | JWT | Admin | — | `User` (passwordHash excluded) |
+| POST | `/users` | JWT | Admin | `CreateUserDto` | `User` |
+| DELETE | `/users/:userId` | JWT | Admin | — | 204 No Content |
 | PATCH | `/users/:userId/password` | JWT | Admin | `ChangePasswordDto` | 204 No Content |
 
 Returns all users ordered by `createdAt DESC`.
+
+**CreateUserDto**
+
+| Field | Type | Validation |
+|-------|------|-----------|
+| email | string | Valid email, unique |
+| password | string | 8–128 characters |
+| firstName | string | 1–100 characters |
+| lastName | string | 1–100 characters |
+| role | enum | Optional. `admin` or `learner`. Default `learner`. |
 
 **ChangePasswordDto**
 
 | Field | Type | Validation |
 |-------|------|-----------|
 | password | string | 8–128 characters |
+
+**Delete behaviour:** Cascade-deletes all related records — `UserProgress`, `QuizAttempt`, and `Enrollment`. An admin cannot delete their own account (400 Bad Request).
+
+**Error responses:**
+- 409 Conflict — email already registered (create)
+- 400 Bad Request — attempting to delete own account
+
+---
+
+### Enrollments
+
+| Method | Route | Auth | Role | Body | Response |
+|--------|-------|------|------|------|----------|
+| POST | `/enrollments` | JWT | Admin | `CreateEnrollmentDto` | `Enrollment` |
+| POST | `/enrollments/bulk` | JWT | Admin | `BulkEnrollmentDto` | `{ enrolled[], skipped[] }` |
+| GET | `/enrollments` | JWT | Admin | — | `Enrollment[]` (filterable) |
+| GET | `/enrollments/my-courses` | JWT | Any | — | `Enrollment[]` with course relation (current user, active only) |
+| GET | `/enrollments/user/:userId` | JWT | Admin | — | `Enrollment[]` with course relation |
+| GET | `/enrollments/course/:courseId` | JWT | Admin | — | `Enrollment[]` with user relation |
+| DELETE | `/enrollments/:userId/:courseId` | JWT | Admin | — | 204 No Content |
+
+**CreateEnrollmentDto**
+
+| Field | Type | Validation |
+|-------|------|-----------|
+| userId | string | Valid UUID |
+| courseId | string | Valid UUID |
+
+**BulkEnrollmentDto**
+
+| Field | Type | Validation |
+|-------|------|-----------|
+| userIds | string[] | Array of valid UUIDs |
+| courseId | string | Valid UUID |
+
+**Bulk enroll response:**
+```json
+{
+  "enrolled": [ /* Enrollment records created */ ],
+  "skipped": [
+    { "userId": "<uuid>", "reason": "Already enrolled" },
+    { "userId": "<uuid>", "reason": "User not found" }
+  ]
+}
+```
+
+**GET /enrollments query parameters** (all optional):
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| userId | UUID | Filter by user |
+| courseId | UUID | Filter by course |
+| status | enum | Filter by status: `active`, `completed`, `unenrolled` |
+
+**Unenroll behaviour** (`DELETE /enrollments/:userId/:courseId`): Soft delete — sets `status = unenrolled` and records `unenrolledAt`. The enrollment record is retained. Only active enrollments can be unenrolled (404 if no active enrollment found).
+
+**Business rules:**
+- Enrolling a user who is already actively enrolled returns 409 Conflict.
+- Bulk enroll skips (rather than erroring on) duplicates and non-existent user IDs.
+- Deleting a course or user cascade-deletes all their enrollment records.
 
 ---
 
@@ -650,11 +799,11 @@ Standard NestJS HTTP exceptions are used throughout:
 
 | Status | When |
 |--------|------|
-| 400 Bad Request | Validation failure; invalid quiz submission; wrong lesson type; invalid file type on upload |
+| 400 Bad Request | Validation failure; invalid quiz submission; wrong lesson type; invalid file type on upload; self-deletion attempt; invalid or expired reset token |
 | 401 Unauthorized | Missing/invalid JWT; wrong credentials |
 | 403 Forbidden | Learner accessing admin-only endpoint |
-| 404 Not Found | Entity does not exist (or unpublished course for learner) |
-| 409 Conflict | Duplicate email on registration; file rename conflicts with existing file |
+| 404 Not Found | Entity does not exist (or inaccessible course for learner); active enrollment not found |
+| 409 Conflict | Duplicate email on registration; file rename conflicts with existing file; duplicate active enrollment |
 
 ---
 
@@ -670,6 +819,13 @@ Standard NestJS HTTP exceptions are used throughout:
 | JWT_SECRET | Yes | — | JWT signing key |
 | JWT_EXPIRATION | No | `1d` | Token lifetime |
 | PORT | No | `3000` | Server listen port |
+| SMTP_HOST | Yes | — | SMTP server hostname |
+| SMTP_PORT | No | `587` | SMTP server port |
+| SMTP_SECURE | No | `false` | Use TLS (`true` for port 465) |
+| SMTP_USER | Yes | — | SMTP login username |
+| SMTP_PASSWORD | Yes | — | SMTP login password |
+| SMTP_FROM | Yes | — | Sender address for outbound email |
+| FRONTEND_URL | Yes | — | Base URL of the frontend (used in password reset links) |
 
 ---
 
@@ -718,15 +874,26 @@ src/
 │   ├── auth.service.ts
 │   ├── strategies/
 │   │   └── jwt.strategy.ts
+│   ├── entities/
+│   │   └── password-reset-token.entity.ts
 │   └── dto/
 │       ├── register.dto.ts
-│       └── login.dto.ts
+│       ├── login.dto.ts
+│       ├── forgot-password.dto.ts
+│       └── reset-password.dto.ts
+├── email/
+│   ├── email.module.ts
+│   ├── email.service.ts
+│   └── templates/
+│       └── password-reset.template.ts
 ├── users/
 │   ├── users.module.ts
 │   ├── users.controller.ts
 │   ├── users.service.ts
-│   └── entities/
-│       └── user.entity.ts
+│   ├── entities/
+│   │   └── user.entity.ts
+│   └── dto/
+│       └── create-user.dto.ts
 ├── courses/
 │   ├── courses.module.ts
 │   ├── courses.controller.ts
@@ -773,6 +940,16 @@ src/
 │   │   └── user-progress.entity.ts
 │   └── dto/
 │       └── mark-complete.dto.ts
+├── enrollments/
+│   ├── enrollments.module.ts
+│   ├── enrollments.controller.ts
+│   ├── enrollments.service.ts
+│   ├── entities/
+│   │   └── enrollment.entity.ts
+│   └── dto/
+│       ├── create-enrollment.dto.ts
+│       ├── bulk-enrollment.dto.ts
+│       └── query-enrollment.dto.ts
 ├── uploads/
 │   ├── uploads.module.ts
 │   ├── uploads.controller.ts
