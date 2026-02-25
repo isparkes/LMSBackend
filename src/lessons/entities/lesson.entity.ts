@@ -66,6 +66,9 @@ export class Lesson extends BaseEntity {
   @Column({ default: true })
   showCorrectAnswers: boolean;
 
+  @Column({ default: false })
+  allowRetryAfterPass: boolean;
+
   @OneToMany(() => QuizQuestion, (question) => question.lesson, {
     cascade: true,
   })

@@ -100,6 +100,17 @@ export class QuizService {
       throw new BadRequestException('This lesson is not a quiz');
     }
 
+    // Block re-submission after passing when not allowed
+    const passMarkPercentageEarly = lesson.passMarkPercentage || 0;
+    if (!lesson.allowRetryAfterPass && passMarkPercentageEarly > 0) {
+      const previousPass = await this.attemptsRepository.findOne({
+        where: { userId, lessonId, passed: true },
+      });
+      if (previousPass) {
+        throw new BadRequestException('You have already passed this quiz.');
+      }
+    }
+
     // Enforce attempt limit
     const maxAttempts = lesson.maxAttempts || 0;
     if (maxAttempts > 0) {

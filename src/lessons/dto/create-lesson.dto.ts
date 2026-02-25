@@ -71,4 +71,9 @@ export class CreateLessonDto {
   @IsBoolean()
   @IsOptional()
   showCorrectAnswers?: boolean;
+
+  @ValidateIf((o) => o.type === LessonType.QUIZ)
+  @IsBoolean()
+  @IsOptional()
+  allowRetryAfterPass?: boolean;
 }
