@@ -52,6 +52,12 @@ export class CreateLessonDto {
   maxAttempts?: number;
 
   @ValidateIf((o) => o.type === LessonType.QUIZ)
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  questionsToShow?: number;
+
+  @ValidateIf((o) => o.type === LessonType.QUIZ)
   @IsBoolean()
   @IsOptional()
   randomizeQuestions?: boolean;

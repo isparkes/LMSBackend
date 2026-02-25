@@ -54,6 +54,9 @@ export class Lesson extends BaseEntity {
   @Column({ type: 'int', default: 0 })
   maxAttempts: number;
 
+  @Column({ type: 'int', default: 0 })
+  questionsToShow: number;
+
   @Column({ default: false })
   randomizeQuestions: boolean;
 

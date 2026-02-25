@@ -97,6 +97,7 @@ Table: `lessons`
 | notes | text | nullable | Optional HTML notes, available on all lesson types. Plain URLs are auto-linked in the frontend. |
 | passMarkPercentage | int | not null, default `0` | Quiz only. 0 = no pass requirement. 1–100 = minimum score to pass. |
 | maxAttempts | int | not null, default `0` | Quiz only. 0 = unlimited attempts. >0 = max number of quiz submissions allowed. |
+| questionsToShow | int | not null, default `0` | Quiz only. 0 = show all questions. >0 = randomly sample this many questions from the full bank for each attempt. Scored out of the sampled count, not the bank total. |
 | randomizeQuestions | boolean | not null, default `false` | Quiz only. When true, questions are presented in random order for each attempt. |
 | randomizeAnswers | boolean | not null, default `false` | Quiz only. When true, answer options are presented in random order for each attempt. |
 | showCorrectAnswers | boolean | not null, default `true` | Quiz only. When false, learners only see their final score after submission — no per-question correct/incorrect marking. |
@@ -397,6 +398,7 @@ All routes are prefixed with `/api`. All parameters named `:id`, `:courseId`, `:
 | notes | string | No | Optional HTML notes for any lesson type |
 | passMarkPercentage | number | No | Quiz only. Integer 0–100. Default 0. |
 | maxAttempts | number | No | Quiz only. Integer >= 0. Default 0 (unlimited). |
+| questionsToShow | number | No | Quiz only. Integer >= 0. Default 0 (show all). When set, randomly samples this many questions from the bank per attempt. Score is calculated out of the sampled count. |
 | randomizeQuestions | boolean | No | Quiz only. Default false. |
 | randomizeAnswers | boolean | No | Quiz only. Default false. |
 | showCorrectAnswers | boolean | No | Quiz only. Default true. |
@@ -507,6 +509,7 @@ When `showCorrectAnswers` is `false` on the lesson, the `results` array is strip
 - If `passMarkPercentage > 0` or `maxAttempts > 0`, a `QuizAttempt` record is saved on each submission.
 - `UserProgress.completed` is only set to `true` if the quiz is passed.
 - If `maxAttempts > 0` and the user has reached the limit, further submissions return 400.
+- If `questionsToShow > 0`, the score denominator is the number of sampled questions presented (n), not the full bank (m). A submission cannot contain more answers than `questionsToShow`.
 - Admins can reset a user's attempts, allowing them to retake the quiz.
 
 ---

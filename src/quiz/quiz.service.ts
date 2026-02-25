@@ -122,6 +122,14 @@ export class QuizService {
       throw new BadRequestException('This quiz has no questions');
     }
 
+    // Validate submitted answer count against questionsToShow when sampling is active
+    const questionsToShow = lesson.questionsToShow || 0;
+    if (questionsToShow > 0 && dto.answers.length > questionsToShow) {
+      throw new BadRequestException(
+        `Expected at most ${questionsToShow} answers, received ${dto.answers.length}`,
+      );
+    }
+
     const questionMap = new Map(questions.map((q) => [q.id, q]));
 
     let correctCount = 0;
@@ -157,7 +165,11 @@ export class QuizService {
       };
     });
 
-    const score = questions.length > 0 ? correctCount / questions.length : 0;
+    // When sampling is active, score against the number of answered questions (n),
+    // not the full bank (m), so that a learner who answered 5 of 20 questions
+    // correctly out of 5 presented gets 100% rather than 25%.
+    const answeredCount = questionsToShow > 0 ? dto.answers.length : questions.length;
+    const score = answeredCount > 0 ? correctCount / answeredCount : 0;
     const scorePercentage = Math.round(score * 100);
     const passMarkPercentage = lesson.passMarkPercentage || 0;
     const passed =
@@ -196,7 +208,7 @@ export class QuizService {
     await this.progressRepository.save(progress);
 
     return {
-      totalQuestions: questions.length,
+      totalQuestions: questionsToShow > 0 ? dto.answers.length : questions.length,
       correctAnswers: correctCount,
       score,
       passed,

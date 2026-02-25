@@ -30,6 +30,22 @@ export class LessonsService {
       throw new NotFoundException('Lesson not found');
     }
 
+    // Apply question bank sampling: when questionsToShow > 0 and the bank
+    // has more questions than the limit, randomly select questionsToShow
+    // questions using a Fisher-Yates shuffle then slice.
+    if (
+      lesson.quizQuestions &&
+      lesson.questionsToShow > 0 &&
+      lesson.quizQuestions.length > lesson.questionsToShow
+    ) {
+      const pool = [...lesson.quizQuestions];
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      lesson.quizQuestions = pool.slice(0, lesson.questionsToShow);
+    }
+
     // Hide correct answers from learners
     if (userRole === UserRole.LEARNER && lesson.quizQuestions) {
       lesson.quizQuestions = lesson.quizQuestions.map((q) => ({
