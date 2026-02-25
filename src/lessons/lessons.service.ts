@@ -58,6 +58,18 @@ export class LessonsService {
     return lesson;
   }
 
+  async findOneAdmin(id: string): Promise<Lesson> {
+    const lesson = await this.lessonsRepository.findOne({
+      where: { id },
+      relations: ['quizQuestions'],
+      order: { quizQuestions: { order: 'ASC' } },
+    });
+    if (!lesson) {
+      throw new NotFoundException('Lesson not found');
+    }
+    return lesson;
+  }
+
   async create(moduleId: string, dto: CreateLessonDto): Promise<Lesson> {
     const lesson = this.lessonsRepository.create({ ...dto, moduleId });
     return this.lessonsRepository.save(lesson);

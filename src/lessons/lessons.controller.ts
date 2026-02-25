@@ -38,6 +38,12 @@ export class LessonsController {
     return this.lessonsService.findOne(id, user.role);
   }
 
+  @Get(':id/admin')
+  @Roles(UserRole.ADMIN)
+  findOneAdmin(@Param('id', ParseUUIDPipe) id: string) {
+    return this.lessonsService.findOneAdmin(id);
+  }
+
   @Post()
   @Roles(UserRole.ADMIN)
   create(
