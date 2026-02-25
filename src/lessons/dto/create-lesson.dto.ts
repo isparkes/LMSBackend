@@ -4,6 +4,7 @@ import {
   IsInt,
   IsOptional,
   IsBoolean,
+  IsUUID,
   Min,
   Max,
   ValidateIf,
@@ -76,4 +77,8 @@ export class CreateLessonDto {
   @IsBoolean()
   @IsOptional()
   allowRetryAfterPass?: boolean;
+
+  @IsOptional()
+  @IsUUID()
+  prerequisiteLessonId?: string | null;
 }

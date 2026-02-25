@@ -69,6 +69,13 @@ export class Lesson extends BaseEntity {
   @Column({ default: false })
   allowRetryAfterPass: boolean;
 
+  @Column({ type: 'uuid', nullable: true, default: null })
+  prerequisiteLessonId: string | null;
+
+  @ManyToOne(() => Lesson, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'prerequisiteLessonId' })
+  prerequisiteLesson: Lesson | null;
+
   @OneToMany(() => QuizQuestion, (question) => question.lesson, {
     cascade: true,
   })

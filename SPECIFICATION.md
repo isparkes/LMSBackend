@@ -101,10 +101,12 @@ Table: `lessons`
 | randomizeQuestions | boolean | not null, default `false` | Quiz only. When true, questions are presented in random order for each attempt. |
 | randomizeAnswers | boolean | not null, default `false` | Quiz only. When true, answer options are presented in random order for each attempt. |
 | showCorrectAnswers | boolean | not null, default `true` | Quiz only. When false, learners only see their final score after submission — no per-question correct/incorrect marking. |
+| allowRetryAfterPass | boolean | not null, default `false` | Quiz only. When false, learners cannot resubmit a quiz they have already passed. When true, passed learners may retake the quiz freely. |
+| prerequisiteLessonId | UUID | nullable, FK → lessons.id, ON DELETE SET NULL | When set, this lesson requires the referenced lesson to be completed before it is accessible. |
 | createdAt | timestamp | auto-generated | |
 | updatedAt | timestamp | auto-updated | |
 
-**Relations:** Belongs to `CourseModule`. Has many `QuizQuestion` (cascade delete). Has many `QuizAttempt` (cascade delete).
+**Relations:** Belongs to `CourseModule`. Has many `QuizQuestion` (cascade delete). Has many `QuizAttempt` (cascade delete). Optionally belongs to another `Lesson` as a prerequisite.
 
 ### QuizQuestion
 
@@ -381,6 +383,7 @@ All routes are prefixed with `/api`. All parameters named `:id`, `:courseId`, `:
 |--------|-------|------|------|------|----------|
 | GET | `/modules/:moduleId/lessons` | JWT | Any | — | `Lesson[]` |
 | GET | `/modules/:moduleId/lessons/:id` | JWT | Any | — | `Lesson` (with quiz questions) |
+| GET | `/modules/:moduleId/lessons/:id/admin` | JWT | Admin | — | `Lesson` (all questions, no sampling or randomization applied) |
 | POST | `/modules/:moduleId/lessons` | JWT | Admin | `CreateLessonDto` | `Lesson` |
 | PATCH | `/modules/:moduleId/lessons/:id` | JWT | Admin | `UpdateLessonDto` | `Lesson` |
 | DELETE | `/modules/:moduleId/lessons/:id` | JWT | Admin | — | 204 No Content |
@@ -402,10 +405,14 @@ All routes are prefixed with `/api`. All parameters named `:id`, `:courseId`, `:
 | randomizeQuestions | boolean | No | Quiz only. Default false. |
 | randomizeAnswers | boolean | No | Quiz only. Default false. |
 | showCorrectAnswers | boolean | No | Quiz only. Default true. |
+| allowRetryAfterPass | boolean | No | Quiz only. Default false. When false, learners cannot resubmit after passing. |
+| prerequisiteLessonId | string (UUID) | No | UUID of another lesson that must be completed before this one. Pass `null` to clear. Returns 404 if the referenced lesson does not exist. Returns 400 if set to the lesson's own ID. |
 
 **UpdateLessonDto** — all fields optional.
 
 **Security:** When a learner fetches a quiz lesson, both `correctOptionIndex` and `correctOptionIndices` are stripped from each question.
+
+**Admin-only lesson fetch** (`GET /modules/:moduleId/lessons/:id/admin`): Returns the full lesson with all questions ordered by `order`. No question sampling (`questionsToShow`), no randomization, and correct answers are always included. Restricted to admins.
 
 ---
 
@@ -510,6 +517,7 @@ When `showCorrectAnswers` is `false` on the lesson, the `results` array is strip
 - `UserProgress.completed` is only set to `true` if the quiz is passed.
 - If `maxAttempts > 0` and the user has reached the limit, further submissions return 400.
 - If `questionsToShow > 0`, the score denominator is the number of sampled questions presented (n), not the full bank (m). A submission cannot contain more answers than `questionsToShow`.
+- If `passMarkPercentage > 0` and `allowRetryAfterPass = false` (the default), a learner who has already passed cannot resubmit — further submissions return 400.
 - Admins can reset a user's attempts, allowing them to retake the quiz.
 
 ---

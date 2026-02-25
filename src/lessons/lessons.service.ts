@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Lesson } from './entities/lesson.entity';
@@ -23,7 +23,7 @@ export class LessonsService {
   async findOne(id: string, userRole: UserRole): Promise<Lesson> {
     const lesson = await this.lessonsRepository.findOne({
       where: { id },
-      relations: ['quizQuestions'],
+      relations: ['quizQuestions', 'prerequisiteLesson'],
       order: { quizQuestions: { order: 'ASC' } },
     });
     if (!lesson) {
@@ -61,7 +61,7 @@ export class LessonsService {
   async findOneAdmin(id: string): Promise<Lesson> {
     const lesson = await this.lessonsRepository.findOne({
       where: { id },
-      relations: ['quizQuestions'],
+      relations: ['quizQuestions', 'prerequisiteLesson'],
       order: { quizQuestions: { order: 'ASC' } },
     });
     if (!lesson) {
@@ -71,6 +71,14 @@ export class LessonsService {
   }
 
   async create(moduleId: string, dto: CreateLessonDto): Promise<Lesson> {
+    if (dto.prerequisiteLessonId) {
+      const prereq = await this.lessonsRepository.findOneBy({
+        id: dto.prerequisiteLessonId,
+      });
+      if (!prereq) {
+        throw new NotFoundException('Prerequisite lesson not found');
+      }
+    }
     const lesson = this.lessonsRepository.create({ ...dto, moduleId });
     return this.lessonsRepository.save(lesson);
   }
@@ -79,6 +87,21 @@ export class LessonsService {
     const lesson = await this.lessonsRepository.findOneBy({ id });
     if (!lesson) {
       throw new NotFoundException('Lesson not found');
+    }
+    if (dto.prerequisiteLessonId !== undefined) {
+      if (dto.prerequisiteLessonId === id) {
+        throw new BadRequestException(
+          'A lesson cannot be its own prerequisite',
+        );
+      }
+      if (dto.prerequisiteLessonId !== null) {
+        const prereq = await this.lessonsRepository.findOneBy({
+          id: dto.prerequisiteLessonId,
+        });
+        if (!prereq) {
+          throw new NotFoundException('Prerequisite lesson not found');
+        }
+      }
     }
     Object.assign(lesson, dto);
     return this.lessonsRepository.save(lesson);
